@@ -150,6 +150,10 @@ static inline void initUART() {
 static inline void initADC() {
   // 10-bit ADC, VDD reference, prescaler /16 (1.25 MHz ADC clock @ 20 MHz CPU)
   ADC0.CTRLC = ADC_REFSEL_VDDREF_gc | ADC_PRESC_DIV16_gc;
+
+  // give ADC 32 ADC clocks to stabilise after enable (~25 µs @ 1.25 MHz).
+  ADC0.CTRLD = ADC_INITDLY_DLY32_gc;
+
   ADC0.CTRLA = ADC_ENABLE_bm;
 }
 
@@ -254,6 +258,7 @@ static inline void stopAll() {
 
 static inline uint16_t readADC(uint8_t muxpos) {
   ADC0.MUXPOS = muxpos;
+  _delay_us(25); // delay is required for accurate readings
   ADC0.COMMAND = ADC_STCONV_bm;
   while (!(ADC0.INTFLAGS & ADC_RESRDY_bm));
   uint16_t val = ADC0.RES;
