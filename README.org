@@ -1,5 +1,6 @@
 * XX-39R                                                              :TOC_4:
 - [[#overview][Overview]]
+- [[#licensing][Licensing]]
 - [[#xx-39r][XX-39R]]
 - [[#elrs-replacement][ELRS replacement]]
   - [[#build-firmware][Build firmware]]
@@ -11,6 +12,10 @@
 This repository is for documenting a pretty bad receiver and motor driver board for a RC boat labeled XX-39R, as well as a replacement for it. The board can be found in models like "Revell Spring Tide 40", but has no place in a toy from this decade (or the last) - the reception is absolutely horrible, and there are better options available nowadays.
 
 Read the sections below for a more detailed board description, as well as our "absolute overkill" option for replacing it with something better. While the replacement board is designed as drop in replacement for this model it has been designed with reusability for other small models in mind as well.
+
+* Licensing
+
+All source code is licensed under [[https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html&ved=2ahUKEwir6f6Xoo6VAxVaGBAIHQJ2DeoQFnoECBIQAQ&usg=AOvVaw0XM7ZibsgscQZj5xHzFtb8][GPLv2]]. PCB related KiCad files are licensed under [[https://creativecommons.org/licenses/by-nc-sa/4.0/][CC BY-NC-SA 4.0]].
 
 * XX-39R
 
