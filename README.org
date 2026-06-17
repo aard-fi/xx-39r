@@ -1,0 +1,108 @@
+* XX-39R                                                              :TOC_4:
+- [[#overview][Overview]]
+- [[#xx-39r][XX-39R]]
+- [[#elrs-replacement][ELRS replacement]]
+  - [[#build-firmware][Build firmware]]
+  - [[#flash-firmware][Flash firmware]]
+  - [[#verify-functionality][Verify functionality]]
+
+* Overview
+
+This repository is for documenting a pretty bad receiver and motor driver board for a RC boat labeled XX-39R, as well as a replacement for it. The board can be found in models like "Revell Spring Tide 40", but has no place in a toy from this decade (or the last) - the reception is absolutely horrible, and there are better options available nowadays.
+
+Read the sections below for a more detailed board description, as well as our "absolute overkill" option for replacing it with something better. While the replacement board is designed as drop in replacement for this model it has been designed with reusability for other small models in mind as well.
+
+* XX-39R
+
+The board is built around the [[https://www.talkingelectronics.com/projects/27MHz%20Transmitters/imagesP2/RX2Bdatasheet-5function.pdf][TX-2B/RX-2B]] transmitter/receiver combo. The problem here is less with that chip, but more that it can be used with the cheapest possible receiver circuit (in this case, tuned to 40MHz), which does not behave well in the real world.
+
+The remote control has 4 buttons: binary inputs for reverse/forward for each of the motors. So no speed control, and steering by only using one motor (or reversing the other, for tight turns).
+
+The motor controller is a [[https://www.lcsc.com/product-detail/Motor-Driver-ICs_Mixic-MX1616H_C5119044.html][MX1616H]] - which is a reasonable choice for a boat powered by 4.5V.
+
+Additionally, there's a protection circuit to detect a current between the two motors to avoid activation outside of the water.
+
+The schematic in the =pcb= directory currently should be mostly complete, with the exception of the receiver circuit.
+
+* ELRS replacement
+
+For our replacement we're relying on an ELRS receiver. While absolute overkill for such a boat it'll allow a nice upgrade path to larger models later on. The hardware can support any small receivers using a serial protocol - so if you have spare older receivers around it can be adapted to use that instead. We don't want to touch other parts of the boat - so while we could use 14500 cells instead of AA we'd have to lower the voltage to make sure we don't burn out the motors.
+
+The easier way is to just stick with the 4.5V architecture, and only boost voltage for the ELRS receiver.
+
+We can reuse the motor controller as well as the protection circuit - but as we want to support the cheapest possible ELRS remotes we can't rely on track mixing in the remote, and therefore need a cheap microcontroller to interface between the receiver and the motor controller. We can use an AtTiny414 for that - it'll work over the complete voltage range we can expect this to operate at. An AtTiny412 would be possible - but we'd have to reuse the UPDI pin.
+
+All unused pins on the MCU are lead out, as well as some spare footprints for VCC and GND pins. The complete table of pin headers is:
+
+| Reference | Description     | Comment                                                                |
+|-----------+-----------------+------------------------------------------------------------------------|
+| J1        | Sense           |                                                                        |
+| J2        | Battery         | Designed for 4.5V, but can take up to 5.5V                             |
+| J3        | Port motor      |                                                                        |
+| J4        | Starboard motor |                                                                        |
+| J5        | UPDI            |                                                                        |
+| J6        | Receiver        | Designed for ELRS, but can be used otherwise as well. See pinout below |
+| J7        | PA6             |                                                                        |
+| J8        | PA1             |                                                                        |
+| J9        | PA3             |                                                                        |
+| J10       | PA2             |                                                                        |
+| J11       | Spare VCC       |                                                                        |
+| J12       | Spare VCC       |                                                                        |
+| J13       | Receiver VCC    | Bridge to use the on board booster, or connect your own                |
+| J14       | Spare GND       |                                                                        |
+| J15       | Spare GND       |                                                                        |
+| J16       | Spare GND       |                                                                        |
+
+The header for the (ELRS) receiver (=J6=) has the following pinout:
+
+| Pin | ELRS | MCU           | Pin |
+|-----+------+---------------+-----|
+|   1 | GND  | GND           |     |
+|   2 | VCC  | -             |     |
+|   3 | TX   | PB3, UART1 RX |   6 |
+|   4 | RX   | PB2, UART1 TX |   7 |
+
+Any receiver using a serial protocol (like FlySky AFHDS) could be used, though the firmware here only supports ELRS.
+
+The motor headers are connected as follows:
+
+|           |          |       |      |     |          |
+|-----------+----------+-------+------+-----+----------|
+| Port      | J3 pin 1 | OUTA1 | INA1 | PA4 | =M1_FWD=   |
+|           | J3 pin 2 | OUTB1 | INB1 | PA5 | =M1_REV=   |
+| Starboard | J4 pin 1 | OUTA2 | INA2 | PB0 | =M2_FWD=   |
+|           | J4 pin 2 | OUTB2 | INB2 | PB1 | =M2_REV= |
+
+** Build firmware
+
+Building only requires [[https://gcc.gnu.org/wiki/avr-gcc][avr-gcc]], and avr-libc in a variant new enough to have headers compatible with AtTiny414. On any sensible Linux distribution just installing those via the package manager should be fine, if you're using Ubuntu you can get a recent enough binary tarball via [[https://github.com/modm-io/avr-gcc][modm-io]].
+
+On MacOS via homebrew you could do =brew tap osx-cross/avr && brew install avr-gcc@15=. Make sure it's in your path - either add it, or force linking it.
+
+** Flash firmware
+
+Flashing requires avrdude, as well as some UPDI programmer. Something like the [[https://www.adafruit.com/product/5879][UPDI friend]] is recommended, though you can [[https://github.com/ElTangas/jtag2updi][use some old Arduino]] as well.
+
+Firmware can be flashed either via the included Makefile, or directly with avrdude. =make flash= will try to write =firmware.hex= to a UPDI programmer at =/dev/ttyUSB1=. You can override the firmware to flash with the =TARGET= variable, and the serial port with =PORT=: =make flash TARGET=firmware-test-pwm-starboard TARGET=/dev/ttyUSB0= would write the starboard motor test firmware via =ttyUSB0=.
+
+Directly with avrdude the command for that would be =avrdude -c serialupdi -p t414 -U flash:w:firmware-test-pwm-starboard.hex:i -P /dev/ttyUSB0=
+
+** Verify functionality
+
+This repository contains various specialised firmware bits to help debugging.
+
+If the serial port is not working:
+
+- flash =firmware-test-pb2= and check for a square wave on the =TX= pin of the ELRS header, and move on to =PB2= (pin 7) if there is none. This will either verify that the pin can be used - or point towards a hardware issue
+- if the square wave test worked flash =firmware-test-uart= - this should be visible on the oscilloscope with the same settings, and a connected serial adapter should start printing =U=
+
+For testing the motors:
+
+- flash =firmware-test-gpio=. This will print to the serial port what it is testing, and will bitbang each motor port. Connected motors should spin up (in both directions), and this should be visible on a multimeter or oscilloscope
+- flash =firmware-test-port= or =firmware-test-starboard= - those will cycle the port/starboard motor through reverse and forward PWM. If both spin correctly in both directions the motors are fine
+
+For testing the water sensing:
+
+- flash =firmware-test-water= and bridge J1, either with finger/metal or by sticking cables into water. It'll dump readings via serial
+
+With all of the above sorted out you can flash =firmware-test= for a simple interactive serial interface to control all of the above. It'll spam a banner to serial until it receives a first keypress.
