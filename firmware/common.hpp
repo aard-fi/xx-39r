@@ -207,6 +207,9 @@ static inline void initPWM() {
   // H-counter: HCMP1->PA4 (INA1, port forward)
   //            HCMP2->PA5 (INB1, port backward)
   TCA0.SPLIT.CTRLD = TCA_SPLIT_SPLITM_bm;
+  // with my test motors DIV1 starts motors at roughly 140 PWM signal, DIV4
+  // at 150 and DIV16 at 160 - so seems it makes sense to stick with a
+  // relatively high PWM frequency here
   TCA0.SPLIT.CTRLA = TCA_SPLIT_CLKSEL_DIV1_gc | TCA_SPLIT_ENABLE_bm;
   TCA0.SPLIT.CTRLB = TCA_SPLIT_LCMP0EN_bm      // PB0 = stbd forward
                      | TCA_SPLIT_LCMP1EN_bm    // PB1 = stbd backward
