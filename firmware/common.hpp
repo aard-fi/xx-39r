@@ -180,6 +180,43 @@ static inline int16_t mapValue(int32_t x, int32_t in_min, int32_t in_max, int32_
 }
 
 
+// optional motor kickstart
+//
+// uncomment to enable kickstart pulses for low-speed motor startup, or pass
+// as compiler flag:
+// #define MOTOR_KICKSTART
+
+#ifdef MOTOR_KICKSTART
+#define MOTOR_KICK_THRESHOLD       150  // PWM speed below which kick may apply
+#define MOTOR_KICK_STRENGTH        200  // PWM pulse that should be used for kicks
+#define MOTOR_KICK_START_PULSES      4  // control-loop iterations to kick on startup
+#define MOTOR_KICK_HOLD_INTERVAL   180  // re-kick interval while crawling. this
+                                        // ensures motors don't stall at low speed
+
+static inline int16_t motorKickApply(int16_t speed,
+                                     int16_t *last,
+                                     uint8_t *kick,
+                                     uint8_t *hold) {
+  int16_t applied = speed;
+  if (speed != 0 && speed > -MOTOR_KICK_THRESHOLD && speed < MOTOR_KICK_THRESHOLD) {
+    if (*last > -8 && *last < 8) {
+      *kick = MOTOR_KICK_START_PULSES;
+    } else if (++(*hold) > MOTOR_KICK_HOLD_INTERVAL) {
+      *kick = 2;
+      *hold = 0;
+    }
+  } else {
+    *hold = 0;
+  }
+  if (*kick) {
+    applied = (speed > 0) ? MOTOR_KICK_STRENGTH : -MOTOR_KICK_STRENGTH;
+    (*kick)--;
+  }
+  *last = speed;
+  return applied;
+}
+#endif
+
 // PWM helpers
 //
 // initialise TCA0 in split mode and enable waveform output on all channels.
@@ -212,9 +249,9 @@ static inline void initPWM() {
   // relatively high PWM frequency here
   TCA0.SPLIT.CTRLA = TCA_SPLIT_CLKSEL_DIV1_gc | TCA_SPLIT_ENABLE_bm;
   TCA0.SPLIT.CTRLB = TCA_SPLIT_LCMP0EN_bm      // PB0 = stbd forward
-                     | TCA_SPLIT_LCMP1EN_bm    // PB1 = stbd backward
-                     | TCA_SPLIT_HCMP1EN_bm    // PA4 = port forward
-                     | TCA_SPLIT_HCMP2EN_bm;   // PA5 = port backward
+    | TCA_SPLIT_LCMP1EN_bm    // PB1 = stbd backward
+    | TCA_SPLIT_HCMP1EN_bm    // PA4 = port forward
+    | TCA_SPLIT_HCMP2EN_bm;   // PA5 = port backward
   TCA0.SPLIT.LPER = 255;
   TCA0.SPLIT.HPER = 255;
   TCA0.SPLIT.LCMP0 = 0;
@@ -230,12 +267,21 @@ static inline void setMotorPort(int16_t speed) {
   if (speed > 255) speed = 255;
   if (speed < -255) speed = -255;
 
-  if (speed >= 0) {
+#ifdef MOTOR_KICKSTART
+  static int16_t last_speed = 0;
+  static uint8_t kick_count = 0;
+  static uint8_t hold_ticks = 0;
+  int16_t applied = motorKickApply(speed, &last_speed, &kick_count, &hold_ticks);
+#else
+  int16_t applied = speed;
+#endif
+
+  if (applied >= 0) {
     TCA0.SPLIT.HCMP2 = 0;                     // clear reverse first
-    TCA0.SPLIT.HCMP1 = (uint8_t)speed;        // then set forward
+    TCA0.SPLIT.HCMP1 = (uint8_t)applied;      // then set forward
   } else {
     TCA0.SPLIT.HCMP1 = 0;                     // clear forward first
-    TCA0.SPLIT.HCMP2 = (uint8_t)(-speed);     // then set reverse
+    TCA0.SPLIT.HCMP2 = (uint8_t)(-applied);   // then set reverse
   }
 }
 
@@ -243,12 +289,21 @@ static inline void setMotorStarboard(int16_t speed) {
   if (speed > 255) speed = 255;
   if (speed < -255) speed = -255;
 
-  if (speed >= 0) {
+#ifdef MOTOR_KICKSTART
+  static int16_t last_speed = 0;
+  static uint8_t kick_count = 0;
+  static uint8_t hold_ticks = 0;
+  int16_t applied = motorKickApply(speed, &last_speed, &kick_count, &hold_ticks);
+#else
+  int16_t applied = speed;
+#endif
+
+  if (applied >= 0) {
     TCA0.SPLIT.LCMP1 = 0;                     // clear reverse first
-    TCA0.SPLIT.LCMP0 = (uint8_t)speed;        // then set forward
+    TCA0.SPLIT.LCMP0 = (uint8_t)applied;      // then set forward
   } else {
     TCA0.SPLIT.LCMP0 = 0;                     // clear forward first
-    TCA0.SPLIT.LCMP1 = (uint8_t)(-speed);     // then set reverse
+    TCA0.SPLIT.LCMP1 = (uint8_t)(-applied);   // then set reverse
   }
 }
 

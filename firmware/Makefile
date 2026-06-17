@@ -29,8 +29,12 @@ TARGETS := \
   firmware-test-pwm-starboard \
   firmware-test-gpio
 
-HEXS := $(TARGETS:=.hex)
-DEPS := $(TARGETS:=.d)
+# Kickstart variants (same source compiled with -DMOTOR_KICKSTART)
+KS_BASE   := firmware firmware-test firmware-test-pwm-port firmware-test-pwm-starboard
+KS_TARGETS := $(KS_BASE:%=%-ks)
+
+HEXS := $(TARGETS:=.hex) $(KS_TARGETS:=.hex)
+DEPS := $(TARGETS:=.d) $(KS_TARGETS:=.d)
 
 # Default target builds everything
 .PHONY: all clean flash
@@ -47,6 +51,10 @@ all: $(HEXS)
 # Convert .elf -> .hex
 %.hex: %.elf
 	$(OBJCOPY) -O ihex -R .eeprom $< $@
+
+# Kickstart variants compile the same .cpp with MOTOR_KICKSTART defined
+%-ks.o: %.cpp
+	$(CXX) $(CXXFLAGS) -DMOTOR_KICKSTART -c $< -o $@
 
 # Compile .cpp -> .o, generating dependency files
 %.o: %.cpp
