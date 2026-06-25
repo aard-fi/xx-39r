@@ -21,6 +21,7 @@ LDFLAGS = -Wl,--gc-sections
 # All firmware targets
 TARGETS := \
   firmware \
+  firmware-springtide40 \
   firmware-test \
   firmware-test-uart \
   firmware-test-pb2 \
@@ -33,8 +34,16 @@ TARGETS := \
 KS_BASE   := firmware firmware-test firmware-test-pwm-port firmware-test-pwm-starboard
 KS_TARGETS := $(KS_BASE:%=%-ks)
 
-HEXS := $(TARGETS:=.hex) $(KS_TARGETS:=.hex)
-DEPS := $(TARGETS:=.d) $(KS_TARGETS:=.d)
+# Water sensor variants define -DWATER_SENSOR
+# TODO: We might also want to have some variants with both watersensor and kickstart
+#       Unlike kickstart WS doesn't change common definitions, though, and is
+#       purely an implementation detail in the specific firmware (so we can
+#       have water sensor in the test firmware without this flag)
+WS_BASE   := firmware-springtide40
+WS_TARGETS := $(WS_BASE:%=%-ws)
+
+HEXS := $(TARGETS:=.hex) $(KS_TARGETS:=.hex) $(WS_TARGETS:=.hex)
+DEPS := $(TARGETS:=.d) $(KS_TARGETS:=.d) $(WS_TARGETS:=.d)
 
 # Default target builds everything
 .PHONY: all clean flash
@@ -55,6 +64,10 @@ all: $(HEXS)
 # Kickstart variants compile the same .cpp with MOTOR_KICKSTART defined
 %-ks.o: %.cpp
 	$(CXX) $(CXXFLAGS) -DMOTOR_KICKSTART -c $< -o $@
+
+# Same for water sensors
+%-ws.o: %.cpp
+	$(CXX) $(CXXFLAGS) -DWATER_SENSOR -c $< -o $@
 
 # Compile .cpp -> .o, generating dependency files
 %.o: %.cpp
