@@ -7913,7 +7913,7 @@
 				)
 			)
 		)
-		(property "Value" "82k"
+		(property "Value" "100k"
 			(at 20.32 45.72 90)
 			(show_name no)
 			(do_not_autoplace no)
