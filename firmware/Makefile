@@ -38,6 +38,9 @@ else ifeq ($(FREQ),16m)
 else
   $(error Unknown FREQ=$(FREQ). Use 5m, 10m, 16m, or 20m)
 endif
+
+PWM_MAX ?= 160
+
 # Compiler Configurations
 CXX = avr-g++
 OBJCOPY = avr-objcopy

@@ -35,7 +35,28 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Frequency-dependent defaults (overridden by Makefile)
+// TCA split-mode timer period (LPER/HPER).  This sets the PWM carrier
+// frequency, NOT the maximum motor duty cycle.  The motor still sees 0..255
+// as its full range; values are scaled to 0..PWM_MAX internally before
+// writing the compare registers.
+//
+// The default is ~78 kHZ max at 20MHz clock. Low speed behaviour of the motors
+// seems better at high PWM frequencies, so we try to bump that up for lower
+// clock speed (at the expense of PWM resolution).
+//
+// PWM_MAX = 160 means 20 MHz / (160+1) = 124 Hz, or, at the 10MHz this is
+// recommended to be used, about 62 Hz.
+#ifndef PWM_MAX
+#define PWM_MAX 160
+#endif
+
+// convert a user-level motor command (0..255 or -255..0) to the timer
+// compare register range (0..PWM_MAX). This allows us to stick with the
+// more common 0..255 PWM range in the rest of the code to avoid confusion
+static inline uint8_t pwmScale(uint8_t speed) {
+  return (uint8_t)(((uint16_t)speed * PWM_MAX + (255 / 2)) / 255);
+}
+
 // frequency-dependent defaults (overridden by Makefile)
 // there should be no need to ever touch this - we just need this to be able to
 // build firmware for multiple clocks
@@ -202,6 +223,35 @@ static inline int16_t mapValue(int32_t x, int32_t in_min, int32_t in_max, int32_
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+// minimum PWM value that actually moves the motor
+// below this the motor stalls. Used by the main firmware to rescale
+// joystick output so the usable range starts here. 0 = disabled.
+#ifndef MOTOR_STALL_SPEED
+#define MOTOR_STALL_SPEED 0
+#endif
+
+// rescale a clamped ±255 motor value so the usable range begins at
+// MOTOR_STALL_SPEED (and -MOTOR_STALL_SPEED in reverse).  0 stays 0.
+// Used only by the main firmware; test firmwares bypass this.
+#if MOTOR_STALL_SPEED > 0
+static inline int16_t applyStallMap(int16_t speed) {
+  if (speed > 0)
+    return mapValue(speed, 0, 255, MOTOR_STALL_SPEED, 255);
+  if (speed < 0)
+    return mapValue(speed, -255, 0, -255, -MOTOR_STALL_SPEED);
+  return 0;
+}
+#else
+static inline int16_t applyStallMap(int16_t speed) { return speed; }
+#endif
+
+// clamp raw motor value to ±255, then apply stall-deadband remapping.
+// convenience wrapper used only by the main firmware.
+static inline int16_t prepareMotorSpeed(int16_t raw) {
+  if (raw > 255) raw = 255;
+  if (raw < -255) raw = -255;
+  return applyStallMap(raw);
+}
 
 // optional motor kickstart
 //
@@ -255,7 +305,10 @@ static inline void initPWM() {
   // insure default TCA0 pin mappings - this is mostly relevant for testing:
   // without a proper reset after testing other PORTMUX settings this might
   // just behave in weird ways. On a clean board this is just a NOOP.
-  PORTMUX.CTRLC &= ~(PORTMUX_TCA00_bm | PORTMUX_TCA01_bm);
+  // PORTMUX.CTRLC is CCP-protected on ATtiny414.
+  uint8_t portmux_val = PORTMUX.CTRLC;
+  portmux_val &= ~(PORTMUX_TCA00_bm | PORTMUX_TCA01_bm);
+  _PROTECTED_WRITE(PORTMUX.CTRLC, portmux_val);
 
   // halt timer before enabling split mode (datasheet requirement, may have
   // fixed odd behaviour of the port motor)
