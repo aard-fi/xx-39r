@@ -10,18 +10,31 @@
 #include <util/delay.h>
 #include <avr/wdt.h>
 
+#ifndef CLK_PRESCALER
+#define CLK_PRESCALER 1
+#endif
+
+#ifndef USART_BAUD
+#define USART_BAUD 694
+#endif
+
 int main() {
   wdt_disable();
 
-  // 20 MHz, no prescaler
-  CPU_CCP = CCP_IOREG_gc;
-  CLKCTRL.MCLKCTRLB = 0x00;
+#if CLK_PRESCALER == 1
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0x00);
+#elif CLK_PRESCALER == 2
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PEN_bm);
+#elif CLK_PRESCALER == 4
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PEN_bm | 0x01);
+#else
+  #error Unsupported CLK_PRESCALER
+#endif
 
   PORTB.DIRSET = PIN2_bm;   // PB2 = TX output
   PORTB.DIRCLR = PIN3_bm;   // PB3 = RX input
 
-  // 115200 @ 20 MHz
-  USART0.BAUD = 694;
+  USART0.BAUD = USART_BAUD;
   USART0.CTRLB = USART_TXEN_bm;
 
   while (1) {

@@ -35,6 +35,20 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// Frequency-dependent defaults (overridden by Makefile)
+// frequency-dependent defaults (overridden by Makefile)
+// there should be no need to ever touch this - we just need this to be able to
+// build firmware for multiple clocks
+#ifndef USART_BAUD
+#define USART_BAUD 694
+#endif
+#ifndef TCB_CCMP
+#define TCB_CCMP 50000
+#endif
+#ifndef CLK_PRESCALER
+#define CLK_PRESCALER 1
+#endif
+
 #define WATER_SENSE_bm PIN7_bm
 
 // UART ring buffers (interrupt-driven TX)
@@ -120,9 +134,18 @@ static inline uint8_t uartRead() {
 }
 
 // system / clock init
+// note that depending on fuse settings there also could be 4 and 8MHz
+// variants - but we don't support those.
 static inline void initClock() {
-  CPU_CCP = CCP_IOREG_gc;
-  CLKCTRL.MCLKCTRLB = 0x00;
+#if CLK_PRESCALER == 1
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0x00);  // 20 or 16 MHz, depending on fuse
+#elif CLK_PRESCALER == 2
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PEN_bm);    // /2 -> 10 MHz
+#elif CLK_PRESCALER == 4
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, CLKCTRL_PEN_bm | 0x01);  // /4 -> 5 MHz
+#else
+#error Unsupported CLK_PRESCALER value
+#endif
 }
 
 static inline void initPins() {
@@ -139,9 +162,9 @@ static inline void initPins() {
   PORTA.DIRCLR = WATER_SENSE_bm;
 }
 
-// UART setup (PB2/PB3, 115200 @ 20 MHz)
+// UART setup (PB2/PB3, 115200 baud — BAUD value derived from F_CPU)
 static inline void initUART() {
-  USART0.BAUD = 694;
+  USART0.BAUD = USART_BAUD;
   USART0.CTRLB = USART_RXEN_bm | USART_TXEN_bm;
   USART0.CTRLA = USART_RXCIE_bm | USART_DREIE_bm;
 }
