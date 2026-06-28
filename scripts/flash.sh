@@ -32,8 +32,8 @@ AVRDUDE="${AVRDUDE:-avrdude}"
 MCU="t414"
 PORT=""
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Default to ../firmware (scripts/ inside release zip sits next to firmware/)
-HEX_DIR="$(cd "${SCRIPT_DIR}/../firmware" && pwd)"
+# Default to ../firmware/build (scripts/ inside release zip sits next to firmware/)
+HEX_DIR="$(cd "${SCRIPT_DIR}/../firmware/build" 2>/dev/null || cd "${SCRIPT_DIR}/../firmware" 2>/dev/null && pwd)"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -354,8 +354,17 @@ select_features() {
 confirm_and_flash() {
   local hex_file="$1"
 
+  # If the exact file doesn't exist, try the suffixed variant (e.g.
+  # firmware-test.hex might actually be firmware-test-20m.hex when built
+  # with all-freqs).
   if [[ ! -f "$hex_file" ]]; then
-    die "Hex file not found: $(basename "$hex_file")"
+    local base="${hex_file%.hex}"
+    local alt="${base}-20m.hex"
+    if [[ -f "$alt" ]]; then
+      hex_file="$alt"
+    else
+      die "Hex file not found: $(basename "$hex_file") (also tried $(basename "$alt"))"
+    fi
   fi
 
   echo ""

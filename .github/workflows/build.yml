@@ -34,7 +34,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: firmware-all
-          path: firmware/*.hex
+          path: firmware/build/*.hex
 
   release:
     needs: build
@@ -48,12 +48,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: firmware-all
-          path: firmware
+          path: .
 
       - name: Package release ZIP
         run: |
-          mkdir -p "xx-39r-${{ github.ref_name }}"
-          cp firmware/*.hex "xx-39r-${{ github.ref_name }}/"
+          mkdir -p "xx-39r-${{ github.ref_name }}/firmware"
+          cp firmware/build/*.hex "xx-39r-${{ github.ref_name }}/firmware/"
           cp -r scripts "xx-39r-${{ github.ref_name }}/"
           cp RELEASE_NOTES.md "xx-39r-${{ github.ref_name }}/"
           zip -r "xx-39r-${{ github.ref_name }}.zip" "xx-39r-${{ github.ref_name }}"

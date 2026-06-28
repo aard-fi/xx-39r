@@ -25,8 +25,12 @@ $ErrorActionPreference = "Stop"
 $Avrdude = "avrdude"
 $Mcu = "t414"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-# Default to ../firmware (scripts/ inside release zip sits next to firmware/)
-$HexDir = Resolve-Path (Join-Path $ScriptDir ".." "firmware") | Select-Object -ExpandProperty Path
+# Default to ../firmware/build (scripts/ inside release zip sits next to firmware/)
+$BuildDir = Resolve-Path (Join-Path $ScriptDir ".." "firmware" "build") -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
+if (-not $BuildDir) {
+    $BuildDir = Resolve-Path (Join-Path $ScriptDir ".." "firmware") | Select-Object -ExpandProperty Path
+}
+$HexDir = $BuildDir
 
 # ---------------------------------------------------------------------------
 # Discover available hex variants (so we only offer what exists)
@@ -403,8 +407,17 @@ function Select-Features($baseName, $hint) {
 }
 
 function Confirm-And-Flash($hexFile) {
+    # If the exact file doesn't exist, try the suffixed variant (e.g.
+    # firmware-test.hex might actually be firmware-test-20m.hex when built
+    # with all-freqs).
     if (-not (Test-Path $hexFile)) {
-        Die "Hex file not found: $(Split-Path -Leaf $hexFile)"
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($hexFile)
+        $alt = Join-Path (Split-Path -Parent $hexFile) "$base-20m.hex"
+        if (Test-Path $alt) {
+            $hexFile = $alt
+        } else {
+            Die "Hex file not found: $(Split-Path -Leaf $hexFile) (also tried $(Split-Path -Leaf $alt))"
+        }
     }
 
     $size = (Get-Item $hexFile).Length
