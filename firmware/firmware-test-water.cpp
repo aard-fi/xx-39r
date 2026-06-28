@@ -6,6 +6,9 @@
  * Continuously print water sensor state on UART.
  */
 
+// This firmware does its own polling ADC reads — disable the window-mode
+// interrupt setup that bootstrap() would otherwise enable.
+#define NO_ADC_INTERRUPTS
 #include "common.hpp"
 
 int main() {

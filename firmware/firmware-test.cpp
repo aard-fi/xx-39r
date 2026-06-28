@@ -26,9 +26,9 @@ void processLine(char *line);
 
 #define LINE_BUF_SIZE 32
 
-// Current motor speeds for status reporting
-static volatile int16_t leftSpeed = 0;
-static volatile int16_t rightSpeed = 0;
+// current motor speeds for status reporting (only accessed from main)
+static int16_t leftSpeed = 0;
+static int16_t rightSpeed = 0;
 
 int main() {
   wdt_disable();
@@ -45,7 +45,19 @@ int main() {
     wdt_reset();
 
     if (!got_input) {
-      uartPrintLn("XX-39R motor test firmware ready. Send 'H' for help.");
+      uartPrint("XX-39R motor test firmware ready. Send 'H' for help.");
+      uartPrint(" W=");
+      uartPutc(water_detected ? '1' : '0');
+
+      uartPrint(" V=");
+      printNumber((int16_t)battery_data);
+      uartPrint("mV");
+
+      uartPrint(" F=");
+      printNumber((int16_t)(readClockHz() / 1000));
+      uartPrint("kHz");
+
+      uartPrintLn("");
       for (uint8_t i = 0; i < 5; i++) {
         _delay_ms(40);
         wdt_reset();
@@ -86,9 +98,15 @@ void printStatus() {
   printNumber(rightSpeed);
 
   uartPrint(" W=");
-  uartPutc(isWaterDetected() ? '1' : '0');
-  uartPrint(" raw=");
-  printNumber(readADC(ADC_MUXPOS_AIN7_gc));
+  uartPutc(water_detected ? '1' : '0');
+
+  uartPrint(" V=");
+  printNumber((int16_t)readBatteryData());
+  uartPrint("mV");
+
+  uartPrint(" F=");
+  printNumber((int16_t)(readClockHz() / 1000));
+  uartPrint("kHz");
 
   uartPrintLn("");
 }
@@ -111,20 +129,42 @@ void processLine(char *line) {
     val = (int16_t)atoi(num);
   }
 
+  // auto-ramp helper: steps from current to target in 25-unit increments
+  // with 40 ms pauses so the motor smoothly reaches the commanded speed.
+  // we need this to bypass our rapid change protection in the main functions -
+  // which are there so firmware can't bypass that. Problem is that a RC TX
+  // will keep spamming the channel value until it changes, while that'd be
+  // pretty annoying with the shitty serial interface we have. So we just
+  // pretend we're spamming it here until teh value matches.
+
+  auto ramp = [](int16_t &tracked, void (*setMotor)(int16_t), int16_t target) {
+    int16_t step = (target > tracked) ? 25 : -25;
+    while (tracked != target) {
+      tracked += step;
+      if ((step > 0 && tracked > target) || (step < 0 && tracked < target))
+        tracked = target;
+      setMotor(tracked);
+      for (uint8_t i = 0; i < 4; i++) {
+        _delay_ms(10);
+        wdt_reset();
+      }
+    }
+  };
+
   switch (cmd) {
     case 'L':
     case 'l':
-      setMotorPort(val);
+      ramp(leftSpeed, setMotorPort, val);
       uartPrint("L=");
-      uartPutc(val >= 0 ? '+' : '-');
+      printNumber(leftSpeed);
       uartPrintLn("");
       break;
 
     case 'R':
     case 'r':
-      setMotorStarboard(val);
+      ramp(rightSpeed, setMotorStarboard, val);
       uartPrint("R=");
-      uartPutc(val >= 0 ? '+' : '-');
+      printNumber(rightSpeed);
       uartPrintLn("");
       break;
 
@@ -139,7 +179,7 @@ void processLine(char *line) {
       uartPrintLn("Commands:");
       uartPrintLn("  L <val>  Left motor (-255..255)");
       uartPrintLn("  R <val>  Right motor (-255..255)");
-      uartPrintLn("  S        Status (speeds + water sense)");
+      uartPrintLn("  S        Status (speeds, water, battery)");
       uartPrintLn("  H / ?    Help");
       uartPrintLn("  <cr>     Stop all");
       break;
