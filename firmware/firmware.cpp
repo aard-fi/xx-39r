@@ -26,6 +26,27 @@ int main() {
   while (1) {
     wdt_reset();
 
+#if WATER_SAFETY_MODE == 0
+    if (!water_detected) {
+      stopAll();
+      continue;
+    }
+#else
+    if (water_detected) {
+      stopAll();
+      continue;
+    }
+#endif
+
+    // Low-voltage cutoff: if battery_data is available and below threshold,
+    // stop everything and wait for voltage recovery.
+#if LOW_VOLTAGE_CUTOFF_MV > 0
+    if (battery_data && battery_data < LOW_VOLTAGE_CUTOFF_MV) {
+      stopAll();
+      continue;
+    }
+#endif
+
     // look for standard 26-byte CRSF frame
     if (uartAvailable() >= 26) {
       if (uartRead() == 0xC8) {     // CRSF address
@@ -36,13 +57,19 @@ int main() {
             for (uint8_t i = 0; i < 22; i++) {
               packet[i] = uartRead();
             }
-            uartRead(); // consume incoming CRC byte
+            uint8_t crc = uartRead(); // CRC byte
 
-            // extract steering (Ch0) and throttle (Ch1)
-            uint16_t steering = (packet[0] | (packet[1] << 8)) & 0x07FF;
-            uint16_t throttle = ((packet[1] >> 3) | (packet[2] << 5)) & 0x07FF;
-
-            mixMotors(steering, throttle);
+            uint8_t crc_buf[24];
+            crc_buf[0] = 24;
+            crc_buf[1] = 0x16;
+            for (uint8_t i = 0; i < 22; i++) crc_buf[i + 2] = packet[i];
+            if (crc == crsfCRC8(crc_buf, 24)) {
+              // extract steering (Ch3) and throttle (Ch1)
+              uint16_t steering = ((packet[4] >> 1) | (packet[5] << 7)) & 0x07FF;
+              uint16_t throttle = ((packet[1] >> 3) | (packet[2] << 5)) & 0x07FF;
+              mixMotors(steering, throttle);
+            }
+            // CRC mismatch: silently drop the frame
           }
         }
       }
@@ -58,6 +85,6 @@ void mixMotors(uint16_t steer, uint16_t thr) {
   int16_t portMotor = forwardSpeed + steeringBias;
   int16_t starboardMotor = forwardSpeed - steeringBias;
 
-  setMotorPort(portMotor);
-  setMotorStarboard(starboardMotor);
+  setMotorPort(prepareMotorSpeed(portMotor));
+  setMotorStarboard(prepareMotorSpeed(starboardMotor));
 }
