@@ -1,23 +1,45 @@
 * XX-39R                                                              :TOC_4:
 - [[#overview][Overview]]
 - [[#licensing][Licensing]]
-- [[#xx-39r][XX-39R]]
+- [[#quick-springtide-40-conversion-guide][Quick springtide 40 conversion guide]]
+- [[#xx-39r265c27-3-the-original-hardware][XX-39R/265C27-3, the original hardware]]
 - [[#elrs-replacement][ELRS replacement]]
-  - [[#build-firmware][Build firmware]]
-  - [[#flash-firmware][Flash firmware]]
+  - [[#firmware][Firmware]]
+    - [[#variants][Variants]]
+    - [[#building][Building]]
+    - [[#flashing][Flashing]]
+    - [[#fuses][Fuses]]
   - [[#verify-functionality][Verify functionality]]
 
 * Overview
 
-This repository is for documenting a pretty bad receiver and motor driver board for a RC boat labeled XX-39R, as well as a replacement for it. The board can be found in models like "Revell Spring Tide 40", but has no place in a toy from this decade (or the last) - the reception is absolutely horrible, and there are better options available nowadays.
+This repository is for documenting a pretty bad receiver and motor driver board for a RC boat labeled =XX-39R= and =265C27-3=, as well as a replacement for it. The board can be found in models like "Revell Spring Tide 40", but has no place in a toy from this decade (or the last) - the reception is absolutely horrible, and there are better options available nowadays.
 
-Read the sections below for a more detailed board description, as well as our "absolute overkill" option for replacing it with something better. While the replacement board is designed as drop in replacement for this model it has been designed with reusability for other small models in mind as well.
+Read the sections below for a more detailed board description, as well as our "absolute overkill" option for replacing it with something better. While the replacement board is designed as drop in replacement for this model it has been designed with reusability for other small models in mind as well - which also would be listed here.
 
 * Licensing
 
 All source code is licensed under [[https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html&ved=2ahUKEwir6f6Xoo6VAxVaGBAIHQJ2DeoQFnoECBIQAQ&usg=AOvVaw0XM7ZibsgscQZj5xHzFtb8][GPLv2]]. PCB related KiCad files are licensed under [[https://creativecommons.org/licenses/by-nc-sa/4.0/][CC BY-NC-SA 4.0]].
 
-* XX-39R
+* Quick springtide 40 conversion guide
+
+Open all the screws on the boat, and open the small electronics box. Submerge the board into isopropyl alcohol for roughly 24 hours - and while wet, remove the plugs. They should come out relatively easy now.
+Remove the antenna wire from the hole, and remove the board.
+
+Assuming you have a board populated with SMD components, now you'll need to
+
+- solder JST-PH 2.0 headers into J1, J2, J3 and J4
+- solder a jumper into or bridge J13
+- solder a pin header (male or female - female might be more comfortabe with some programmers) into J5
+- solder a pin header into J6. Recommendation would be angled male, and female on the ELRS receiver
+
+The layout is the same as the original - the JST headers and the ELRS module most go to the underside of the board (inside the silk screen markings). For the programmer an angled header has space on top as well, and can allow for easier reflashing.
+
+Next you can connect your UPDI programmer to the board and the PC, download the latest firmware archive from the release page, unzip, and run =flash.sh= (Linux/MacOS) or =flash.ps1= (Windows), and follow the instructions. Select the 10MHz springtide firmware, and decide if you want the water sensor.
+
+Plug in the ELRS receiver and he motor, battery and sensor wires. Do a quick functionality test with batteries and a remote and then put everything together.
+
+* XX-39R/265C27-3, the original hardware
 
 The board is built around the [[https://www.talkingelectronics.com/projects/27MHz%20Transmitters/imagesP2/RX2Bdatasheet-5function.pdf][TX-2B/RX-2B]] transmitter/receiver combo. The problem here is less with that chip, but more that it can be used with the cheapest possible receiver circuit (in this case, tuned to 40MHz), which does not behave well in the real world.
 
@@ -78,19 +100,73 @@ The motor headers are connected as follows:
 | Starboard | J4 pin 1 | OUTA2 | INA2 | PB0 | =M2_FWD=   |
 |           | J4 pin 2 | OUTB2 | INB2 | PB1 | =M2_REV= |
 
-** Build firmware
+** Firmware
+
+This is build with =common.hpp= containing code for all bigger features, and the individual firmware variants can use that to build model specific variants in less than 50 lines of code.
+
+Common features are
+
+- direction-change dead time (~50–80 ms coast) prevents regenerative voltage spikes
+- rate limiting (±25 PWM per packet accel) makes it both more controllable (kid friendly) and prevents hardware destroying voltage spikes
+- low-voltage cutoff (2.8 V) can stop motors before brownout
+- custom CRSF parser, somewhat resilient: we try to re-sync if we read too much garbage, and stop the motors if we can't get it back
+- water sensor readings, in safety mode (motors directly shut off) or just reading for extra data
+- battery voltage readings
+- support for different CPU speeds: 5, 10, 16 and 20MHz
+- simple RX and TX buffering for UART communications
+- optional "kickstart" support: on slow speeds do occasional kicks to get the motor started
+
+*** Variants
+
+We can build variants with extra features from base sources, with the filename containing markers to show what it is:
+
+- *-ks* — Motor kickstart enabled (helps low-speed startup)
+- *-ws* — Water safety sensor enabled. Recommended for kids - motors stop when the boat is removed from the water.
+- *-5m*, *-10m*, *-16m* — CPU frequency variants (default = 20 MHz)
+
+All release builds have frequency markers, only manual builds for development targets come without that, in which case 20MHz is assumed.
+
+When running a model from batteries you generally should be using the 10MHz variant - that should be stable until relatively low voltages still. See fuse settings below if you want to push it even further by utilising brownout detection.
+
+*** Building
 
 Building only requires [[https://gcc.gnu.org/wiki/avr-gcc][avr-gcc]], and avr-libc in a variant new enough to have headers compatible with AtTiny414. On any sensible Linux distribution just installing those via the package manager should be fine, if you're using Ubuntu you can get a recent enough binary tarball via [[https://github.com/modm-io/avr-gcc][modm-io]].
 
 On MacOS via homebrew you could do =brew tap osx-cross/avr && brew install avr-gcc@15=. Make sure it's in your path - either add it, or force linking it.
 
-** Flash firmware
+=make all-freqs= builds all variants.  Individual targets work too:
+
+=make build/firmware-test-10m.hex= builds a single suffixed hex for 10 MHz.
+
+=make FREQ=10m MOTOR_STALL_SPEED=120 all= customises stall speed before building.
+
+*** Flashing
 
 Flashing requires avrdude, as well as some UPDI programmer. Something like the [[https://www.adafruit.com/product/5879][UPDI friend]] is recommended, though you can [[https://github.com/ElTangas/jtag2updi][use some old Arduino]] as well.
 
-Firmware can be flashed either via the included Makefile, or directly with avrdude. =make flash= will try to write =firmware.hex= to a UPDI programmer at =/dev/ttyUSB1=. You can override the firmware to flash with the =TARGET= variable, and the serial port with =PORT=: =make flash TARGET=firmware-test-pwm-starboard TARGET=/dev/ttyUSB0= would write the starboard motor test firmware via =ttyUSB0=.
+When building from source =make flash= can be used - it will try to write =firmware.hex= to a UPDI programmer at =/dev/ttyUSB1=. You can override the firmware to flash with the =TARGET= variable, and the serial port with =PORT=: =make flash TARGET=firmware-test-pwm-starboard TARGET=/dev/ttyUSB0= would write the starboard motor test firmware via =ttyUSB0=.
 
 Directly with avrdude the command for that would be =avrdude -c serialupdi -p t414 -U flash:w:firmware-test-pwm-starboard.hex:i -P /dev/ttyUSB0=
+
+If you downloaded a release with prebuilt hex files, use the interactive scripts in =scripts/=:
+
+- macOS / Linux: =./scripts/flash.sh=
+- Windows: =powershell -ExecutionPolicy Bypass -File .\scripts\flash.ps1=
+
+These scripts auto-detect your programmer, show current fuse values in plain English, and guide you through firmware selection.
+
+*** Fuses
+
+There are two fuses interesting for us:
+
+- *BODCFG = 0x0A* — Brown-out detection enabled at 2.6 V
+- *OSCCFG = 0x02* — 20 MHz internal oscillator
+
+OSCCFG only needs to be set when running at 16MHz.
+
+BODCFG configures the brownout detector, which can be useful to ensure the system gets back into a defined state when playing close to voltage limits.
+
+Set with avrdude, or the included flash scripts.
 
 ** Verify functionality
 
@@ -111,3 +187,8 @@ For testing the water sensing:
 - flash =firmware-test-water= and bridge J1, either with finger/metal or by sticking cables into water. It'll dump readings via serial
 
 With all of the above sorted out you can flash =firmware-test= for a simple interactive serial interface to control all of the above. It'll spam a banner to serial until it receives a first keypress.
+
+
+Steering should be channel 1 idle 0, -100 to 100. throttle should be channel 3, idle -100, up to 100.
+
+Channels 5 and 8 may be used as toggle switches, channels 6 and 7 as tristate switches.
